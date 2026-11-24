@@ -64,6 +64,9 @@ CLI11_INLINE std::string simple(const App *app, const Error &e);
 
 /// Printout the full help string on error (if this fn is set, the old default for CLI11)
 CLI11_INLINE std::string help(const App *app, const Error &e);
+
+// New function added for issue #1149:
+CLI11_INLINE std::string suggest(const App *app, const Error &e);
 }  // namespace FailureMessage
 
 /// enumeration of modes of how to deal with command line extras

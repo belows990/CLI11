@@ -2527,3 +2527,27 @@ TEST_CASE_METHOD(TApp, "subcommandEnvironmentName", "[subcom]") {
     CHECK_THROWS_AS(run(), CLI::RequiredError);
     unset_env("SOME_FILE");
 }
+
+// Test case bug #1149 on github:
+TEST_CASE_METHOD(TApp, "SubcommandTypoSuggestion", "[subcom][issue1149]") {
+    app.add_subcommand("install");
+
+    app.failure_message(CLI::FailureMessage::suggest);
+
+    args = {"instal"};
+
+    try {
+        run();
+        FAIL("Expected an ExtrasError");
+    } catch(const CLI::ExtrasError &e) {
+        std::ostringstream out;
+        std::ostringstream err;
+
+        CHECK(app.exit(e, out, err) == e.get_exit_code());
+
+        CHECK_THAT(err.str(), Contains("Did you mean 'install'?"));
+    }
+}
+
+
+

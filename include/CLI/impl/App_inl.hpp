@@ -2782,10 +2782,8 @@ CLI11_INLINE void retire_option(App *app, const std::string &option_name) {
         retire_option(app, opt);
         return;
     }
-    auto *opt2 = app->add_option(option_name, "option has been retired and has no effect")
-                     ->type_name("RETIRED")
-                     ->expected(0, 1)
-                     ->default_str("RETIRED");
+    auto *opt2 = app->add_option(option_name, "option has been retired and has no effect");
+    opt2->type_name("RETIRED")->expected(0, 1)->default_str("RETIRED");
     // LCOV_EXCL_START
     // something odd with coverage on new compilers
     Validator retired_warning{[opt2](std::string &) {
@@ -2801,6 +2799,83 @@ CLI11_INLINE void retire_option(App *app, const std::string &option_name) {
 CLI11_INLINE void retire_option(App &app, const std::string &option_name) { retire_option(&app, option_name); }
 
 namespace FailureMessage {
+
+// Helper function implemented to fix issue #1149: This fix uses Levenshtein distance
+// to suggest a valid subcommand when the input is sufficiently similar.
+// std::size_t edit_distance() calculates how similar two commands are, and
+// std::size_t suggest() is responsible for deciding whether to recommend a command or not.
+
+CLI11_INLINE std::size_t edit_distance(const std::string &a, const std::string &b) {
+    std::vector<std::size_t> prev(b.size() + 1);
+    std::vector<std::size_t> curr(b.size() + 1);
+
+    for(std::size_t j = 0; j <= b.size(); ++j) {
+        prev[j] = j;
+    }
+
+    for(std::size_t i = 1; i <= a.size(); ++i) {
+        curr[0] = i;
+
+        for(std::size_t j = 1; j <= b.size(); ++j) {
+            std::size_t cost = (a[i - 1] == b[j - 1]) ? 0 : 1;
+
+            curr[j] = (std::min)({
+                prev[j] + 1,
+                curr[j - 1] + 1,
+                prev[j - 1] + cost
+            });
+        }
+
+        prev.swap(curr);
+    }
+
+    return prev[b.size()];
+}
+
+CLI11_INLINE std::string suggest(const App *app, const Error &e) {
+    std::string message = simple(app, e);
+
+    // Only suggest commands for unexpected arguments.
+    if(e.get_name() != "ExtrasError") {
+        return message;
+    }
+
+    auto extras = app->remaining(false);
+    if(extras.empty()) {
+        return message;
+    }
+
+    const std::string &unknown = extras.front();
+
+    // Skip options and very short strings.
+    if(unknown.size() < 3 || unknown[0] == '-') {
+        return message;
+    }
+
+    std::size_t best_distance = 3;
+    std::string best_match;
+
+    // Check all registered subcommands.
+    for(const auto *sub : app->get_subcommands(nullptr)) {
+        if(sub->get_disabled() || sub->get_name().empty()) {
+            continue;
+        }
+
+        const std::string &name = sub->get_name();
+        std::size_t distance = edit_distance(unknown, name);
+
+        if(distance < best_distance) {
+            best_distance = distance;
+            best_match = name;
+        }
+    }
+
+    if(!best_match.empty()) {
+        message += "Did you mean '" + best_match + "'?\n";
+    }
+
+    return message;
+}
 
 CLI11_INLINE std::string simple(const App *app, const Error &e) {
     std::string header = std::string(e.what()) + "\n";
@@ -2819,6 +2894,9 @@ CLI11_INLINE std::string simple(const App *app, const Error &e) {
 
     return header;
 }
+
+
+
 
 CLI11_INLINE std::string help(const App *app, const Error &e) {
     std::string header = std::string("ERROR: ") + e.get_name() + ": " + e.what() + "\n";
