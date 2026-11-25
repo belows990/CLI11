@@ -2800,11 +2800,7 @@ CLI11_INLINE void retire_option(App &app, const std::string &option_name) { reti
 
 namespace FailureMessage {
 
-// Helper function implemented to fix issue #1149: This fix uses Levenshtein distance
-// to suggest a valid subcommand when the input is sufficiently similar.
-// std::size_t edit_distance() calculates how similar two commands are, and
-// std::size_t suggest() is responsible for deciding whether to recommend a command or not.
-
+/// Levenshtein distance function for suggesting valid subcommands when an incorrect one is given
 CLI11_INLINE std::size_t edit_distance(const std::string &a, const std::string &b) {
     std::vector<std::size_t> prev(b.size() + 1);
     std::vector<std::size_t> curr(b.size() + 1);
@@ -2832,6 +2828,7 @@ CLI11_INLINE std::size_t edit_distance(const std::string &a, const std::string &
     return prev[b.size()];
 }
 
+/// Determine a recommended command when an incorrect one is given. Uses \ref edit_distance
 CLI11_INLINE std::string suggest(const App *app, const Error &e) {
     std::string message = simple(app, e);
 
