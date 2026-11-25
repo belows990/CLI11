@@ -4,6 +4,7 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
+#include "CLI/CLI.hpp"
 #include "app_helper.hpp"
 #include <memory>
 #include <string>
@@ -2528,7 +2529,7 @@ TEST_CASE_METHOD(TApp, "subcommandEnvironmentName", "[subcom]") {
     unset_env("SOME_FILE");
 }
 
-// Test case bug #1149 on github:
+// Test case bug #1009 on github:
 TEST_CASE_METHOD(TApp, "SubcommandTypoSuggestion", "[subcom][issue1149]") {
     app.add_subcommand("install");
 
@@ -2549,5 +2550,25 @@ TEST_CASE_METHOD(TApp, "SubcommandTypoSuggestion", "[subcom][issue1149]") {
     }
 }
 
+// Test case bug #1149 on github:
+TEST_CASE_METHOD(TApp, "SubcommandOrderInMessage", "[subcom]") {
+    app.add_subcommand("install");
+
+    app.failure_message(CLI::FailureMessage::suggest);
+
+    args = {"instal", "test"};
+
+    try {
+        run();
+        FAIL("Expected an ExtrasError");
+    } catch(const CLI::ExtrasError &e) {
+        std::ostringstream out;
+        std::ostringstream err;
+
+        CHECK(app.exit(e, out, err) == e.get_exit_code());
+
+        CHECK_THAT(err.str(), Contains("Did you mean 'install'?") && Contains("instal test"));
+    }
+}
 
 
