@@ -737,20 +737,29 @@ TEST_CASE("Issue984: unavailable information is not mistaken for zero", "[issue9
 
 TEST_CASE_METHOD(TApp, "Issue984: real parsing error preserves context", "[issue984]") {
     std::vector<int> numbers;
+
     app.add_option("--numbers", numbers)->expected(3);
     args = {"--numbers", "10"};
 
     try {
         run();
         FAIL("Expected an ArgumentMismatch");
-    } catch(const CLI::ArgumentMismatch &error) {
+    }
+    catch(const CLI::ArgumentMismatch &error) {
         const auto &details = error.get_details();
-        CHECK(details.reason == CLI::ArgumentMismatch::Reason::TypedAtLeast);
+
+        CHECK(details.reason ==
+              CLI::ArgumentMismatch::Reason::AtLeast);
+
         CHECK(details.option_name == "--numbers");
+
         CHECK(details.has_count);
         CHECK(details.count == 3);
-        CHECK_FALSE(details.has_received);
-        CHECK_FALSE(details.type_name.empty());
+
+        CHECK(details.has_received);
+        CHECK(details.received == 1);
+
+        CHECK(details.type_name.empty());
     }
 }
 
