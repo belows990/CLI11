@@ -645,3 +645,123 @@ TEST_CASE_METHOD(TApp, "vectorComplex", "[newparse]") {
     CHECK(1.4 == vcomplex[1].real());
     CHECK(-4.0 == vcomplex[1].imag());
 }
+
+// Added regression tests to test changes implemented in Error.hpp to solve issue 984
+
+TEST_CASE("Issue984: direct argument counts are preserved", "[issue984]") {
+    using Mismatch = CLI::ArgumentMismatch;
+
+    const Mismatch exact("--numbers", 3, 1);
+    const auto &exact_details = exact.get_details();
+    CHECK(exact_details.reason == Mismatch::Reason::Exact);
+    CHECK(exact_details.option_name == "--numbers");
+    CHECK(exact_details.has_count);
+    CHECK(exact_details.count == 3);
+    CHECK(exact_details.has_received);
+    CHECK(exact_details.received == 1);
+    CHECK(std::string(exact.what()) == "Expected exactly 3 arguments to --numbers, got 1");
+    CHECK(exact.get_exit_code() == static_cast<int>(CLI::ExitCodes::ArgumentMismatch));
+
+    const Mismatch minimum("--numbers", -3, 1);
+    CHECK(minimum.get_details().reason == Mismatch::Reason::AtLeast);
+    CHECK(minimum.get_details().count == 3);
+    CHECK(minimum.get_details().received == 1);
+    CHECK(std::string(minimum.what()) == "Expected at least 3 arguments to --numbers, got 1");
+}
+
+TEST_CASE("Issue984: AtLeast and AtMost preserve limits", "[issue984]") {
+    using Mismatch = CLI::ArgumentMismatch;
+
+    const auto too_few = Mismatch::AtLeast("--numbers", 3, 1);
+    const auto &few = too_few.get_details();
+    CHECK(few.reason == Mismatch::Reason::AtLeast);
+    CHECK(few.option_name == "--numbers");
+    CHECK(few.has_count);
+    CHECK(few.count == 3);
+    CHECK(few.has_received);
+    CHECK(few.received == 1);
+    CHECK(std::string(too_few.what()) == "--numbers: At least 3 required but received 1");
+
+    const auto too_many = Mismatch::AtMost("--numbers", 3, 5);
+    const auto &many = too_many.get_details();
+    CHECK(many.reason == Mismatch::Reason::AtMost);
+    CHECK(many.option_name == "--numbers");
+    CHECK(many.has_count);
+    CHECK(many.count == 3);
+    CHECK(many.has_received);
+    CHECK(many.received == 5);
+    CHECK(std::string(too_many.what()) == "--numbers: At most 3 required but received 5");
+}
+
+TEST_CASE("Issue984: typed errors preserve their type context", "[issue984]") {
+    using Mismatch = CLI::ArgumentMismatch;
+
+    const auto typed = Mismatch::TypedAtLeast("--numbers", 2, "INT");
+    const auto &typed_details = typed.get_details();
+    CHECK(typed_details.reason == Mismatch::Reason::TypedAtLeast);
+    CHECK(typed_details.option_name == "--numbers");
+    CHECK(typed_details.has_count);
+    CHECK(typed_details.count == 2);
+    CHECK(typed_details.type_name == "INT");
+    CHECK_FALSE(typed_details.has_received);
+    CHECK(std::string(typed.what()) == "--numbers: 2 required INT missing");
+
+    const auto partial = Mismatch::PartialType("--point", 2, "INT");
+    const auto &partial_details = partial.get_details();
+    CHECK(partial_details.reason == Mismatch::Reason::PartialType);
+    CHECK(partial_details.option_name == "--point");
+    CHECK(partial_details.has_count);
+    CHECK(partial_details.count == 2);
+    CHECK(partial_details.type_name == "INT");
+    CHECK_FALSE(partial_details.has_received);
+    CHECK(std::string(partial.what()) == "--point: INT only partially specified: 2 required for each element");
+}
+
+TEST_CASE("Issue984: unavailable information is not mistaken for zero", "[issue984]") {
+    using Mismatch = CLI::ArgumentMismatch;
+
+    const auto flag = Mismatch::FlagOverride("--verbose");
+    const auto &flag_details = flag.get_details();
+    CHECK(flag_details.reason == Mismatch::Reason::FlagOverride);
+    CHECK(flag_details.option_name == "--verbose");
+    CHECK_FALSE(flag_details.has_count);
+    CHECK_FALSE(flag_details.has_received);
+    CHECK(std::string(flag.what()) == "--verbose was given a disallowed flag override");
+
+    const Mismatch legacy("Original message");
+    CHECK(legacy.get_details().reason == Mismatch::Reason::Unknown);
+    CHECK_FALSE(legacy.get_details().has_count);
+    CHECK_FALSE(legacy.get_details().has_received);
+    CHECK(std::string(legacy.what()) == "Original message");
+}
+
+TEST_CASE_METHOD(TApp, "Issue984: real parsing error preserves context", "[issue984]") {
+    std::vector<int> numbers;
+    app.add_option("--numbers", numbers)->expected(3);
+    args = {"--numbers", "10"};
+
+    try {
+        run();
+        FAIL("Expected an ArgumentMismatch");
+    } catch(const CLI::ArgumentMismatch &error) {
+        const auto &details = error.get_details();
+        CHECK(details.reason == CLI::ArgumentMismatch::Reason::TypedAtLeast);
+        CHECK(details.option_name == "--numbers");
+        CHECK(details.has_count);
+        CHECK(details.count == 3);
+        CHECK_FALSE(details.has_received);
+        CHECK_FALSE(details.type_name.empty());
+    }
+}
+
+TEST_CASE("Issue984: application can format a message without parsing what", "[issue984]") {
+    const auto error = CLI::ArgumentMismatch::AtLeast("--numbers", 3, 1);
+    const auto &details = error.get_details();
+
+    const std::string custom_message =
+        "Please supply at least " + std::to_string(details.count) +
+        " values for " + details.option_name +
+        "; you gave " + std::to_string(details.received) + ".";
+
+    CHECK(custom_message == "Please supply at least 3 values for --numbers; you gave 1.");
+}
