@@ -264,30 +264,92 @@ class RequiredError : public ParseError {
 class ArgumentMismatch : public ParseError {
     CLI11_ERROR_DEF(ParseError, ArgumentMismatch)
     CLI11_ERROR_SIMPLE(ArgumentMismatch)
+
+  public:
+    /// The kind of argument mismatch. Unknown means the error was made from a message alone.
+    enum class Reason { Unknown, Exact, AtLeast, AtMost, TypedAtLeast, FlagOverride, PartialType };
+
+    /// Original context for constructing an ArgumentMismatch message.
+    /// count means the expected count, minimum/maximum count, or per-element count,
+    /// depending on reason. A missing count is distinguished from the value zero.
+    struct Details {
+        Reason reason{Reason::Unknown};
+        std::string option_name{};
+        int count{0};
+        bool has_count{false};
+        std::size_t received{0};
+        bool has_received{false};
+        std::string type_name{};
+    };
+
+  private:
+    Details details_{};
+
+  public:
+    /// Get the original mismatch context without parsing what().
+    /// For message-only errors, reason is Unknown and count fields are unavailable.
+    CLI11_NODISCARD const Details &get_details() const { return details_; }
+
     ArgumentMismatch(std::string name, int expected, std::size_t received)
         : ArgumentMismatch(expected > 0 ? ("Expected exactly " + std::to_string(expected) + " arguments to " + name +
                                            ", got " + std::to_string(received))
                                         : ("Expected at least " + std::to_string(-expected) + " arguments to " + name +
                                            ", got " + std::to_string(received)),
-                           ExitCodes::ArgumentMismatch) {}
+                           ExitCodes::ArgumentMismatch) {
+        details_.reason = expected > 0 ? Reason::Exact : Reason::AtLeast;
+        details_.option_name = std::move(name);
+        details_.count = expected > 0 ? expected : -expected;
+        details_.has_count = true;
+        details_.received = received;
+        details_.has_received = true;
+    }
 
     static ArgumentMismatch AtLeast(std::string name, int num, std::size_t received) {
-        return ArgumentMismatch(name + ": At least " + std::to_string(num) + " required but received " +
-                                std::to_string(received));
+        ArgumentMismatch error(name + ": At least " + std::to_string(num) + " required but received " +
+                               std::to_string(received));
+        error.details_.reason = Reason::AtLeast;
+        error.details_.option_name = std::move(name);
+        error.details_.count = num;
+        error.details_.has_count = true;
+        error.details_.received = received;
+        error.details_.has_received = true;
+        return error;
     }
     static ArgumentMismatch AtMost(std::string name, int num, std::size_t received) {
-        return ArgumentMismatch(name + ": At most " + std::to_string(num) + " required but received " +
-                                std::to_string(received));
+        ArgumentMismatch error(name + ": At most " + std::to_string(num) + " required but received " +
+                               std::to_string(received));
+        error.details_.reason = Reason::AtMost;
+        error.details_.option_name = std::move(name);
+        error.details_.count = num;
+        error.details_.has_count = true;
+        error.details_.received = received;
+        error.details_.has_received = true;
+        return error;
     }
     static ArgumentMismatch TypedAtLeast(std::string name, int num, std::string type) {
-        return ArgumentMismatch(name + ": " + std::to_string(num) + " required " + type + " missing");
+        ArgumentMismatch error(name + ": " + std::to_string(num) + " required " + type + " missing");
+        error.details_.reason = Reason::TypedAtLeast;
+        error.details_.option_name = std::move(name);
+        error.details_.count = num;
+        error.details_.has_count = true;
+        error.details_.type_name = std::move(type);
+        return error;
     }
     static ArgumentMismatch FlagOverride(std::string name) {
-        return ArgumentMismatch(name + " was given a disallowed flag override");
+        ArgumentMismatch error(name + " was given a disallowed flag override");
+        error.details_.reason = Reason::FlagOverride;
+        error.details_.option_name = std::move(name);
+        return error;
     }
     static ArgumentMismatch PartialType(std::string name, int num, std::string type) {
-        return ArgumentMismatch(name + ": " + type + " only partially specified: " + std::to_string(num) +
-                                " required for each element");
+        ArgumentMismatch error(name + ": " + type + " only partially specified: " + std::to_string(num) +
+                               " required for each element");
+        error.details_.reason = Reason::PartialType;
+        error.details_.option_name = std::move(name);
+        error.details_.count = num;
+        error.details_.has_count = true;
+        error.details_.type_name = std::move(type);
+        return error;
     }
 };
 
