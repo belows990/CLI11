@@ -11,6 +11,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <sstream>
 
 using cx = std::complex<double>;
 
@@ -773,4 +774,42 @@ TEST_CASE("Issue984: application can format a message without parsing what", "[i
         "; you gave " + std::to_string(details.received) + ".";
 
     CHECK(custom_message == "Please supply at least 3 values for --numbers; you gave 1.");
+}
+
+//Test that shows applications can access information to produce custom messages
+TEST_CASE("Issue984: failure_message uses structured data", "[issue984]") {
+    CLI::App app{"Issue984 integration test"};
+    std::vector<int> numbers;
+    app.add_option("--numbers", numbers)->expected(3);
+
+    bool formatter_called = false;
+    app.failure_message([&formatter_called](const CLI::App *current_app, const CLI::Error &error) {
+        formatter_called = true;
+        const auto *mismatch = dynamic_cast<const CLI::ArgumentMismatch *>(&error);
+        if(mismatch != nullptr) {
+            const auto &details = mismatch->get_details();
+            if(details.reason == CLI::ArgumentMismatch::Reason::AtLeast &&
+               details.has_count && details.has_received) {
+                return std::string("Please provide at least ") + std::to_string(details.count) +
+                       " numbers for " + details.option_name + ". You provided only " +
+                       std::to_string(details.received) + ".\n";
+            }
+        }
+        return CLI::FailureMessage::simple(current_app, error);
+    });
+
+    const char *argv[] = {"issue984-demo", "--numbers", "10"};
+    try {
+        app.parse(3, argv);
+        FAIL("Expected a CLI::ArgumentMismatch exception");
+    } catch(const CLI::ArgumentMismatch &error) {
+        std::ostringstream out;
+        std::ostringstream err;
+        const int exit_code = app.exit(error, out, err);
+
+        CHECK(formatter_called);
+        CHECK(exit_code == static_cast<int>(CLI::ExitCodes::ArgumentMismatch));
+        CHECK(out.str().empty());
+        CHECK(err.str() == "Please provide at least 3 numbers for --numbers. You provided only 1.\n");
+    }
 }
